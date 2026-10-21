@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Content Factory</title>
+<style>
+:root{--bg:#f5f6fa;--card:#fff;--ink:#1c2033;--mute:#6b7186;--line:#e3e6ef;--accent:#5b5bd6;--accent-ink:#fff;--ok:#1f9d55;--err:#d23c3c;--soft:#eef0ff}
+@media (prefers-color-scheme:dark){:root{--bg:#12141c;--card:#1b1e29;--ink:#e8eaf3;--mute:#9aa0b5;--line:#2a2e3d;--accent:#8383ff;--accent-ink:#10121a;--ok:#4cc38a;--err:#ff7b7b;--soft:#23263a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 "Segoe UI",system-ui,sans-serif;display:flex;min-height:100vh}
+aside{width:230px;background:var(--card);border-right:1px solid var(--line);padding:20px 14px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh}
+.brand{font-weight:700;font-size:18px;padding:4px 10px 16px}
+.brand small{display:block;font-weight:400;color:var(--mute);font-size:12px}
+nav button{all:unset;cursor:pointer;display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:10px;color:var(--mute);width:100%;box-sizing:border-box}
+nav button:hover{background:var(--soft)}
+nav button.on{background:var(--soft);color:var(--accent);font-weight:600}
+nav .n{width:24px;height:24px;border-radius:50%;background:var(--line);display:grid;place-items:center;font-size:12px;color:var(--ink)}
+nav button.on .n{background:var(--accent);color:var(--accent-ink)}
+main{flex:1;padding:32px;max-width:900px}
+h1{margin:0 0 4px;font-size:24px}
+.sub{color:var(--mute);margin:0 0 24px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:16px}
+.card h3{margin:0 0 10px;font-size:16px}
+label{display:block;font-size:13px;color:var(--mute);margin:12px 0 4px}
+input,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+input:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
+textarea{min-height:110px;resize:vertical}
+.btn{cursor:pointer;border:0;border-radius:10px;padding:10px 16px;font:inherit;font-weight:600;background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:var(--soft);color:var(--accent)}
+.btn:disabled{opacity:.5;cursor:wait}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.list{display:flex;flex-direction:column;gap:6px}
+.item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px}
+.item span{color:var(--mute);font-size:13px}
+.msg{margin-top:12px;font-size:14px}.msg.ok{color:var(--ok)}.msg.err{color:var(--err)}
+pre{white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:14px;max-height:360px;overflow:auto;margin:10px 0 0;font:14px/1.6 inherit}
+code{background:var(--soft);padding:2px 6px;border-radius:6px;font-size:13px}
+.step{display:flex;gap:12px;margin:10px 0}.step b{min-width:22px;color:var(--accent)}
+.empty{color:var(--mute);font-style:italic}
+section{display:none}section.on{display:block}
+@media(max-width:700px){body{flex-direction:column}aside{width:auto;height:auto;position:static;flex-direction:row;overflow:auto}.brand{display:none}main{padding:18px}}
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand">Content Factory<small>Kịch bản, video, đăng bài</small></div>
+  <nav id="nav">
+    <button data-t="script" class="on"><span class="n">1</span>Viết kịch bản</button>
+    <button data-t="colab"><span class="n">2</span>Làm video (Colab)</button>
+    <button data-t="post"><span class="n">3</span>Đăng bài</button>
+    <button data-t="settings"><span class="n">&#9881;</span>Cài đặt</button>
+  </nav>
+</aside>
+<main>
+<section id="script" class="on">
+  <h1>Viết kịch bản</h1>
+  <p class="sub">Nhập chủ đề, ứng dụng gọi proxy để viết kịch bản theo văn phong tự nhiên.</p>
+  <div class="card">
+    <label for="topic">Chủ đề video</label>
+    <input id="topic" placeholder="Ví dụ: 3 thói quen buổi sáng giúp tập trung hơn">
+    <label for="notes">Yêu cầu thêm (không bắt buộc)</label>
+    <input id="notes" placeholder="Ví dụ: dài khoảng 60 giây, giọng thân mật">
+    <div class="row"><button class="btn" id="gen">Viết kịch bản</button><span id="genmsg" class="msg"></span></div>
+    <pre id="out" hidden></pre>
+  </div>
+  <div class="card"><h3>Kịch bản đã lưu</h3><div id="scripts" class="list"></div>
+    <div class="row"><button class="btn ghost" data-open="scripts">Mở thư mục</button></div></div>
+</section>
+
+<section id="colab">
+  <h1>Làm video trên Colab</h1>
+  <p class="sub">Máy yếu nên phần nặng chạy trên Google Colab miễn phí (GPU T4).</p>
+  <div class="card"><h3>Các bước</h3>
+    <div class="step"><b>1</b><div>Đưa kịch bản lên Drive: <code>rclone copy data/scripts <span class="rc">gdrive:content-factory</span>/input</code> hoặc kéo thả trên drive.google.com.</div></div>
+    <div class="step"><b>2</b><div>Tải notebook bên dưới, vào colab.research.google.com chọn Tệp, Tải notebook lên. Chọn Runtime T4 GPU rồi chạy lần lượt các ô.</div></div>
+    <div class="step"><b>3</b><div>Khi xong, tải thành phẩm về: <code>rclone copy <span class="rc">gdrive:content-factory</span>/output data/drive_inbox</code>, hoặc tải tay từ Drive vào thư mục "Video về".</div></div>
+  </div>
+  <div class="card"><h3>Notebook</h3><div id="nbs" class="list"></div></div>
+  <div class="card"><h3>Video về từ Colab</h3><div id="inbox" class="list"></div>
+    <div class="row"><button class="btn ghost" data-open="inbox">Mở thư mục "Video về"</button></div></div>
+</section>
+
+<section id="post">
+  <h1>Đăng bài</h1>
+  <p class="sub">Chọn video đã làm xong, mở Postiz để đăng, rồi đánh dấu đã đăng.</p>
+  <div class="card"><h3>Chờ đăng</h3><div id="inbox2" class="list"></div>
+    <div class="row"><button class="btn ghost" data-open="inbox">Mở thư mục video</button></div></div>
+  <div class="card"><h3>Đã đăng</h3><div id="pub" class="list"></div></div>
+  <div class="card"><h3>Mở Postiz</h3>
+    <p class="sub" style="margin:0 0 8px">Postiz chạy riêng (địa chỉ bạn đã cài). Nhập địa chỉ rồi bấm mở.</p>
+    <input id="postiz" value="http://localhost:5000">
+    <div class="row"><button class="btn" id="openpostiz">Mở Postiz</button></div></div>
+</section>
+
+<section id="settings">
+  <h1>Cài đặt</h1>
+  <p class="sub">File exe proxy (ClewdR) chạy riêng bên ngoài. Ở đây chỉ nhập địa chỉ để kết nối.</p>
+  <div class="card">
+    <label for="base">Địa chỉ proxy</label><input id="base">
+    <label for="pw">Mật khẩu API (để trống nếu giữ nguyên) <span id="pwset"></span></label><input id="pw" type="password" autocomplete="off">
+    <label for="model">Tên model</label><input id="model">
+    <label for="remote">Rclone remote (thư mục Drive)</label><input id="remote">
+    <div class="row"><button class="btn" id="save">Lưu</button><button class="btn ghost" id="test">Kiểm tra kết nối</button><span id="setmsg" class="msg"></span></div>
+  </div>
+</section>
+</main>
+<script>
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+async function api(path,body){
+  const o=body===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json","X-CF":"1"},body:JSON.stringify(body)};
+  const r=await fetch(path,o);const j=await r.json();if(!r.ok)throw new Error(j.error||"Lỗi");return j;
+}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function setMsg(el,t,ok){el.textContent=t;el.className="msg "+(ok?"ok":"err")}
+$$("#nav button").forEach(b=>b.onclick=()=>{
+  $$("#nav button").forEach(x=>x.classList.toggle("on",x===b));
+  $$("section").forEach(s=>s.classList.toggle("on",s.id===b.dataset.t));
+});
+$$("[data-open]").forEach(b=>b.onclick=()=>api("/api/open",{folder:b.dataset.open}));
+function fill(el,items,fn,emptyText){el.innerHTML=items.length?items.map(fn).join(""):`<div class="empty">${emptyText}</div>`}
+async function refresh(){
+  const s=await api("/api/state");
+  const c=s.config;
+  $("#base").value=c.base_url;$("#model").value=c.model;$("#remote").value=c.rclone_remote;
+  $("#pwset").textContent=c.password_set?"(đã lưu)":"(chưa có)";
+  $$(".rc").forEach(e=>e.textContent=c.rclone_remote);
+  fill($("#scripts"),s.scripts,x=>`<div class="item"><b>${esc(x.name)}</b><span>${x.time}</span><button class="btn ghost" data-view="${esc(x.name)}">Xem</button></div>`,"Chưa có kịch bản.");
+  fill($("#nbs"),s.notebooks,x=>`<div class="item"><b>${esc(x.title)}</b><a class="btn ghost" style="text-decoration:none" href="/colab/${esc(x.file)}">Tải về</a></div>`,"");
+  fill($("#inbox"),s.inbox,x=>`<div class="item"><b>${esc(x.name)}</b><span>${x.time}</span></div>`,"Chưa có video nào về.");
+  fill($("#inbox2"),s.inbox,x=>`<div class="item"><b>${esc(x.name)}</b><span>${x.time}</span><button class="btn" data-pub="${esc(x.name)}">Đã đăng</button></div>`,"Chưa có video chờ đăng.");
+  fill($("#pub"),s.published,x=>`<div class="item"><b>${esc(x.name)}</b><span>${x.time}</span></div>`,"Chưa có.");
+  $$("[data-view]").forEach(b=>b.onclick=async()=>{const r=await api("/api/script?name="+encodeURIComponent(b.dataset.view));$("#out").hidden=false;$("#out").textContent=r.text;scrollTo({top:0,behavior:"smooth"})});
+  $$("[data-pub]").forEach(b=>b.onclick=async()=>{await api("/api/publish",{name:b.dataset.pub});refresh()});
+}
+$("#gen").onclick=async()=>{
+  const b=$("#gen"),m=$("#genmsg");b.disabled=true;setMsg(m,"Đang viết, có thể mất vài chục giây...",true);
+  try{const r=await api("/api/script",{topic:$("#topic").value,notes:$("#notes").value});
+    $("#out").hidden=false;$("#out").textContent=r.text;setMsg(m,"Đã lưu: "+r.name,true);refresh()}
+  catch(e){setMsg(m,e.message,false)}finally{b.disabled=false}
+};
+$("#save").onclick=async()=>{
+  try{await api("/api/config",{base_url:$("#base").value,password:$("#pw").value,model:$("#model").value,rclone_remote:$("#remote").value});
+    $("#pw").value="";setMsg($("#setmsg"),"Đã lưu.",true);refresh()}catch(e){setMsg($("#setmsg"),e.message,false)}
+};
+$("#test").onclick=async()=>{
+  setMsg($("#setmsg"),"Đang kiểm tra...",true);
+  try{const r=await api("/api/health",{});setMsg($("#setmsg"),"Kết nối tốt. Model: "+(r.models.join(", ")||"không rõ"),true)}
+  catch(e){setMsg($("#setmsg"),e.message,false)}
+};
+$("#openpostiz").onclick=()=>{const u=$("#postiz").value.trim();if(/^https?:\/\//.test(u))window.open(u,"_blank","noopener")};
+refresh();
+</script>
+</body>
+</html>

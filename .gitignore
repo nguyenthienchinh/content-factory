@@ -1,0 +1,9 @@
+vendor/
+data/
+config.json
+__pycache__/
+*.pyc
+dist/
+build/
+*.spec
+.venv/
