@@ -24,8 +24,8 @@ h1{margin:0 0 4px;font-size:24px}
 .card h3{margin:0 0 10px;font-size:16px}
 label{display:block;font-size:13px;color:var(--mute);margin:12px 0 4px}
 input,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+input[type=checkbox]{width:auto;margin-right:8px}
 input:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
-textarea{min-height:110px;resize:vertical}
 .btn{cursor:pointer;border:0;border-radius:10px;padding:10px 16px;font:inherit;font-weight:600;background:var(--accent);color:var(--accent-ink)}
 .btn.ghost{background:var(--soft);color:var(--accent)}
 .btn:disabled{opacity:.5;cursor:wait}
@@ -33,6 +33,8 @@ textarea{min-height:110px;resize:vertical}
 .list{display:flex;flex-direction:column;gap:6px}
 .item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px}
 .item span{color:var(--mute);font-size:13px}
+.tag{font-size:12px;padding:2px 8px;border-radius:99px;background:var(--soft);color:var(--accent)}
+.tag.done{background:#e3f6ec;color:var(--ok)}.tag.failed{background:#fde8e8;color:var(--err)}
 .msg{margin-top:12px;font-size:14px}.msg.ok{color:var(--ok)}.msg.err{color:var(--err)}
 pre{white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:14px;max-height:360px;overflow:auto;margin:10px 0 0;font:14px/1.6 inherit}
 code{background:var(--soft);padding:2px 6px;border-radius:6px;font-size:13px}
@@ -44,23 +46,39 @@ section{display:none}section.on{display:block}
 </head>
 <body>
 <aside>
-  <div class="brand">Content Factory<small>Kịch bản, video, đăng bài</small></div>
+  <div class="brand">Content Factory<small>Tự động từ chủ đề đến video</small></div>
   <nav id="nav">
-    <button data-t="script" class="on"><span class="n">1</span>Viết kịch bản</button>
-    <button data-t="colab"><span class="n">2</span>Làm video (Colab)</button>
-    <button data-t="post"><span class="n">3</span>Đăng bài</button>
+    <button data-t="auto" class="on"><span class="n">1</span>Tự động</button>
+    <button data-t="script"><span class="n">2</span>Chỉ viết kịch bản</button>
+    <button data-t="colab"><span class="n">3</span>Colab và video</button>
+    <button data-t="post"><span class="n">4</span>Đăng bài</button>
     <button data-t="settings"><span class="n">&#9881;</span>Cài đặt</button>
   </nav>
 </aside>
 <main>
-<section id="script" class="on">
-  <h1>Viết kịch bản</h1>
-  <p class="sub">Nhập chủ đề, ứng dụng gọi proxy để viết kịch bản theo văn phong tự nhiên.</p>
+<section id="auto" class="on">
+  <h1>Tự động</h1>
+  <p class="sub">Nhập chủ đề: viết kịch bản, đẩy job lên Drive, worker Colab xử lý, video tự về máy.</p>
+  <div class="card">
+    <label for="atopic">Chủ đề video</label>
+    <input id="atopic" placeholder="Ví dụ: 3 thói quen buổi sáng giúp tập trung hơn">
+    <label for="anotes">Yêu cầu thêm (không bắt buộc)</label>
+    <input id="anotes" placeholder="Ví dụ: dài khoảng 60 giây, giọng thân mật">
+    <div class="row"><button class="btn" id="autogo">Chạy tự động</button><span id="automsg" class="msg"></span></div>
+    <p class="sub" style="margin:12px 0 0">Điều kiện: notebook <code>colab_worker</code> đang chạy trên Colab (xem mục Colab và video).</p>
+  </div>
+  <div class="card"><h3>Công việc</h3><div id="jobs" class="list"></div>
+    <div class="row"><button class="btn ghost" id="pollnow">Kiểm tra ngay</button></div></div>
+</section>
+
+<section id="script">
+  <h1>Chỉ viết kịch bản</h1>
+  <p class="sub">Viết kịch bản theo văn phong tự nhiên, chưa gửi lên Colab.</p>
   <div class="card">
     <label for="topic">Chủ đề video</label>
-    <input id="topic" placeholder="Ví dụ: 3 thói quen buổi sáng giúp tập trung hơn">
-    <label for="notes">Yêu cầu thêm (không bắt buộc)</label>
-    <input id="notes" placeholder="Ví dụ: dài khoảng 60 giây, giọng thân mật">
+    <input id="topic">
+    <label for="notes">Yêu cầu thêm</label>
+    <input id="notes">
     <div class="row"><button class="btn" id="gen">Viết kịch bản</button><span id="genmsg" class="msg"></span></div>
     <pre id="out" hidden></pre>
   </div>
@@ -69,38 +87,40 @@ section{display:none}section.on{display:block}
 </section>
 
 <section id="colab">
-  <h1>Làm video trên Colab</h1>
-  <p class="sub">Máy yếu nên phần nặng chạy trên Google Colab miễn phí (GPU T4).</p>
+  <h1>Colab và video</h1>
+  <p class="sub">Chạy worker một lần, giữ tab mở. Worker nhận job từ Drive và ghi kết quả về Drive.</p>
   <div class="card"><h3>Các bước</h3>
-    <div class="step"><b>1</b><div>Đưa kịch bản lên Drive: <code>rclone copy data/scripts <span class="rc">gdrive:content-factory</span>/input</code> hoặc kéo thả trên drive.google.com.</div></div>
-    <div class="step"><b>2</b><div>Tải notebook bên dưới, vào colab.research.google.com chọn Tệp, Tải notebook lên. Chọn Runtime T4 GPU rồi chạy lần lượt các ô.</div></div>
-    <div class="step"><b>3</b><div>Khi xong, tải thành phẩm về: <code>rclone copy <span class="rc">gdrive:content-factory</span>/output data/drive_inbox</code>, hoặc tải tay từ Drive vào thư mục "Video về".</div></div>
+    <div class="step"><b>1</b><div>Tải <code>colab_worker.ipynb</code> bên dưới, vào colab.research.google.com chọn Tệp, Tải notebook lên, Runtime T4 GPU, bấm Run all.</div></div>
+    <div class="step"><b>2</b><div>Chọn cách nối Drive trong Cài đặt: thư mục Google Drive for Desktop (khuyến nghị) hoặc rclone.</div></div>
+    <div class="step"><b>3</b><div>Giữ tab Colab mở. Phiên miễn phí có thể bị ngắt, khi đó mở lại và Run all, job dở sẽ được xếp lại.</div></div>
+    <div class="step"><b>4</b><div>Cần mẫu giọng: đặt <code>voice/mau_giong.wav</code> và <code>voice/mau_giong.txt</code> trong thư mục <code>input</code> trên Drive.</div></div>
   </div>
   <div class="card"><h3>Notebook</h3><div id="nbs" class="list"></div></div>
   <div class="card"><h3>Video về từ Colab</h3><div id="inbox" class="list"></div>
-    <div class="row"><button class="btn ghost" data-open="inbox">Mở thư mục "Video về"</button></div></div>
+    <div class="row"><button class="btn ghost" data-open="inbox">Mở thư mục</button></div></div>
 </section>
 
 <section id="post">
   <h1>Đăng bài</h1>
-  <p class="sub">Chọn video đã làm xong, mở Postiz để đăng, rồi đánh dấu đã đăng.</p>
-  <div class="card"><h3>Chờ đăng</h3><div id="inbox2" class="list"></div>
-    <div class="row"><button class="btn ghost" data-open="inbox">Mở thư mục video</button></div></div>
+  <p class="sub">Mở Postiz để đăng video đã về, rồi đánh dấu đã đăng.</p>
+  <div class="card"><h3>Chờ đăng</h3><div id="inbox2" class="list"></div></div>
   <div class="card"><h3>Đã đăng</h3><div id="pub" class="list"></div></div>
   <div class="card"><h3>Mở Postiz</h3>
-    <p class="sub" style="margin:0 0 8px">Postiz chạy riêng (địa chỉ bạn đã cài). Nhập địa chỉ rồi bấm mở.</p>
     <input id="postiz" value="http://localhost:5000">
     <div class="row"><button class="btn" id="openpostiz">Mở Postiz</button></div></div>
 </section>
 
 <section id="settings">
   <h1>Cài đặt</h1>
-  <p class="sub">File exe proxy (ClewdR) chạy riêng bên ngoài. Ở đây chỉ nhập địa chỉ để kết nối.</p>
+  <p class="sub">ClewdR chạy riêng bên ngoài. Ở đây chỉ nhập địa chỉ kết nối.</p>
   <div class="card">
     <label for="base">Địa chỉ proxy</label><input id="base">
     <label for="pw">Mật khẩu API (để trống nếu giữ nguyên) <span id="pwset"></span></label><input id="pw" type="password" autocomplete="off">
     <label for="model">Tên model</label><input id="model">
-    <label for="remote">Rclone remote (thư mục Drive)</label><input id="remote">
+    <label for="lang">Ngôn ngữ giọng nói (en, zh, ja, ko, yue; tiếng Việt chưa được README liệt kê)</label><input id="lang">
+    <label for="drivedir">Thư mục content-factory đã đồng bộ bởi Google Drive for Desktop (ví dụ G:\My Drive\content-factory)</label><input id="drivedir">
+    <label for="remote">Hoặc rclone remote (dùng khi để trống ô trên)</label><input id="remote">
+    <label><input type="checkbox" id="ucc">Cho worker dùng Claude Code để dựng video OpenMontage (cần ANTHROPIC_API_KEY trong Colab Secrets)</label>
     <div class="row"><button class="btn" id="save">Lưu</button><button class="btn ghost" id="test">Kiểm tra kết nối</button><span id="setmsg" class="msg"></span></div>
   </div>
 </section>
@@ -113,6 +133,8 @@ async function api(path,body){
 }
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function setMsg(el,t,ok){el.textContent=t;el.className="msg "+(ok?"ok":"err")}
+const STATE={queued:"Đang chờ",running:"Đang chạy",done:"Xong",failed:"Lỗi",unknown:"Chưa rõ"};
+const STAGE={tts:"giọng nói",video:"dựng video",lipsync:"khớp khẩu hình",upscale:"upscale 4K"};
 $$("#nav button").forEach(b=>b.onclick=()=>{
   $$("#nav button").forEach(x=>x.classList.toggle("on",x===b));
   $$("section").forEach(s=>s.classList.toggle("on",s.id===b.dataset.t));
@@ -122,25 +144,36 @@ function fill(el,items,fn,emptyText){el.innerHTML=items.length?items.map(fn).joi
 async function refresh(){
   const s=await api("/api/state");
   const c=s.config;
-  $("#base").value=c.base_url;$("#model").value=c.model;$("#remote").value=c.rclone_remote;
+  if(document.activeElement.tagName!=="INPUT"){
+    $("#base").value=c.base_url;$("#model").value=c.model;$("#remote").value=c.rclone_remote;
+    $("#drivedir").value=c.drive_dir||"";$("#lang").value=c.lang||"en";$("#ucc").checked=!!c.use_claude_code;
+  }
   $("#pwset").textContent=c.password_set?"(đã lưu)":"(chưa có)";
-  $$(".rc").forEach(e=>e.textContent=c.rclone_remote);
-  fill($("#scripts"),s.scripts,x=>`<div class="item"><b>${esc(x.name)}</b><span>${x.time}</span><button class="btn ghost" data-view="${esc(x.name)}">Xem</button></div>`,"Chưa có kịch bản.");
+  fill($("#jobs"),s.jobs,x=>`<div class="item"><div><b>${esc(x.id)}</b><br><span>${esc(x.created)} ${x.stage?"· "+esc(STAGE[x.stage]||x.stage):""} ${esc(x.note||"")}</span></div><span class="tag ${esc(x.state)}">${esc(STATE[x.state]||x.state)}</span></div>`,"Chưa có công việc.");
+  fill($("#scripts"),s.scripts,x=>`<div class="item"><b>${esc(x.name)}</b><span>${x.time}</span><span><button class="btn ghost" data-view="${esc(x.name)}">Xem</button> <button class="btn ghost" data-send="${esc(x.name)}">Gửi Colab</button></span></div>`,"Chưa có kịch bản.");
   fill($("#nbs"),s.notebooks,x=>`<div class="item"><b>${esc(x.title)}</b><a class="btn ghost" style="text-decoration:none" href="/colab/${esc(x.file)}">Tải về</a></div>`,"");
   fill($("#inbox"),s.inbox,x=>`<div class="item"><b>${esc(x.name)}</b><span>${x.time}</span></div>`,"Chưa có video nào về.");
   fill($("#inbox2"),s.inbox,x=>`<div class="item"><b>${esc(x.name)}</b><span>${x.time}</span><button class="btn" data-pub="${esc(x.name)}">Đã đăng</button></div>`,"Chưa có video chờ đăng.");
   fill($("#pub"),s.published,x=>`<div class="item"><b>${esc(x.name)}</b><span>${x.time}</span></div>`,"Chưa có.");
   $$("[data-view]").forEach(b=>b.onclick=async()=>{const r=await api("/api/script?name="+encodeURIComponent(b.dataset.view));$("#out").hidden=false;$("#out").textContent=r.text;scrollTo({top:0,behavior:"smooth"})});
+  $$("[data-send]").forEach(b=>b.onclick=async()=>{try{await api("/api/job",{script:b.dataset.send});refresh()}catch(e){alert(e.message)}});
   $$("[data-pub]").forEach(b=>b.onclick=async()=>{await api("/api/publish",{name:b.dataset.pub});refresh()});
 }
+$("#autogo").onclick=async()=>{
+  const b=$("#autogo"),m=$("#automsg");b.disabled=true;setMsg(m,"Đang viết kịch bản và gửi job...",true);
+  try{const r=await api("/api/auto",{topic:$("#atopic").value,notes:$("#anotes").value});
+    setMsg(m,"Đã gửi job: "+r.job,true);refresh()}
+  catch(e){setMsg(m,e.message,false)}finally{b.disabled=false}
+};
+$("#pollnow").onclick=async()=>{await api("/api/poll",{});refresh()};
 $("#gen").onclick=async()=>{
-  const b=$("#gen"),m=$("#genmsg");b.disabled=true;setMsg(m,"Đang viết, có thể mất vài chục giây...",true);
+  const b=$("#gen"),m=$("#genmsg");b.disabled=true;setMsg(m,"Đang viết...",true);
   try{const r=await api("/api/script",{topic:$("#topic").value,notes:$("#notes").value});
     $("#out").hidden=false;$("#out").textContent=r.text;setMsg(m,"Đã lưu: "+r.name,true);refresh()}
   catch(e){setMsg(m,e.message,false)}finally{b.disabled=false}
 };
 $("#save").onclick=async()=>{
-  try{await api("/api/config",{base_url:$("#base").value,password:$("#pw").value,model:$("#model").value,rclone_remote:$("#remote").value});
+  try{await api("/api/config",{base_url:$("#base").value,password:$("#pw").value,model:$("#model").value,rclone_remote:$("#remote").value,drive_dir:$("#drivedir").value,lang:$("#lang").value,use_claude_code:$("#ucc").checked});
     $("#pw").value="";setMsg($("#setmsg"),"Đã lưu.",true);refresh()}catch(e){setMsg($("#setmsg"),e.message,false)}
 };
 $("#test").onclick=async()=>{
@@ -149,7 +182,7 @@ $("#test").onclick=async()=>{
   catch(e){setMsg($("#setmsg"),e.message,false)}
 };
 $("#openpostiz").onclick=()=>{const u=$("#postiz").value.trim();if(/^https?:\/\//.test(u))window.open(u,"_blank","noopener")};
-refresh();
+refresh();setInterval(refresh,15000);
 </script>
 </body>
 </html>

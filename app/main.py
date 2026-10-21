@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Content Factory: ứng dụng cục bộ (giao diện web) điều phối viết kịch bản, Colab và đăng bài.
+"""Content Factory: ứng dụng cục bộ (giao diện web) điều phối viết kịch bản, hàng đợi job Colab và nhận video về.
 
-ClewdR chạy riêng bên ngoài (file exe của bạn). Ứng dụng này chỉ gọi tới địa chỉ proxy
+ClewdR chạy riêng bên ngoài (file exe của bạn). Ứng dụng chỉ gọi tới địa chỉ proxy
 tương thích OpenAI mà bạn cấu hình. Chỉ dùng thư viện chuẩn.
 """
 import json
@@ -20,6 +20,8 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import jobs
+
 FROZEN = getattr(sys, "frozen", False)
 if FROZEN:
     RES = Path(sys._MEIPASS)
@@ -31,6 +33,7 @@ else:
     UI_DIR = Path(__file__).resolve().parent / "ui"
 
 CONFIG_FILE = HOME / "config.json"
+JOBS_FILE = HOME / "data" / "jobs.json"
 DATA = HOME / "data"
 DIRS = {"scripts": DATA / "scripts", "inbox": DATA / "drive_inbox", "published": DATA / "published", "home": HOME}
 MEDIA_EXT = {".mp4", ".mov", ".mkv", ".webm", ".wav", ".mp3"}
@@ -39,14 +42,21 @@ DEFAULTS = {
     "password": "",
     "model": "claude-sonnet-4-6",
     "rclone_remote": "gdrive:content-factory",
+    "drive_dir": "",
+    "lang": "en",
+    "use_claude_code": False,
+    "poll_seconds": 30,
     "port": 8765,
 }
 NOTEBOOKS = {
+    "colab_worker.ipynb": "Worker tự động (chạy một lần, để mở tab)",
     "colab_openmontage.ipynb": "Dựng video (OpenMontage)",
     "colab_gpt_sovits.ipynb": "Clone giọng nói (GPT-SoVITS)",
     "colab_latentsync.ipynb": "Khớp khẩu hình (LatentSync)",
     "colab_video2x.ipynb": "Upscale 4K (Video2X)",
 }
+FINAL_NAMES = ("final_4k.mp4", "lipsync.mp4", "video.mp4", "voice.wav")
+LOCK = threading.Lock()
 
 
 def load_config():
@@ -61,6 +71,18 @@ def load_config():
 
 def save_config(cfg):
     CONFIG_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def load_jobs():
+    try:
+        return json.loads(JOBS_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def save_jobs(js):
+    JOBS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    JOBS_FILE.write_text(json.dumps(js, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def slugify(text):
@@ -109,6 +131,82 @@ def generate_script(cfg, topic, notes):
             last = f"{type(e).__name__}"
         time.sleep(2 * (attempt + 1))
     raise RuntimeError(f"Gọi proxy thất bại ({last}). Kiểm tra file exe proxy đang chạy, địa chỉ và mật khẩu.")
+
+
+def save_script(topic, text):
+    DIRS["scripts"].mkdir(parents=True, exist_ok=True)
+    p = DIRS["scripts"] / f"{slugify(topic)}-{datetime.now():%Y%m%d-%H%M%S}.txt"
+    p.write_text(text + "\n", encoding="utf-8")
+    return p
+
+
+def submit_job(cfg, script_name, stages=None):
+    p = safe_name(DIRS["scripts"], script_name)
+    if not p or not p.exists():
+        raise RuntimeError("Không thấy kịch bản.")
+    job_id = p.stem[:80].strip("-")
+    if not jobs.valid_id(job_id):
+        job_id = "job-" + datetime.now().strftime("%Y%m%d-%H%M%S")
+    job = jobs.make_job(job_id, p.read_text(encoding="utf-8"), stages=stages,
+                        lang=cfg.get("lang", "en"), use_claude_code=cfg.get("use_claude_code", False))
+    where = jobs.push_job(cfg, job)
+    with LOCK:
+        js = load_jobs()
+        js[job_id] = {"script": p.name, "state": "queued", "stage": "", "pulled": False,
+                      "created": datetime.now().strftime("%d/%m %H:%M"), "note": ""}
+        save_jobs(js)
+    return job_id, where
+
+
+def pull_finished(cfg, job_id):
+    got = jobs.pull_output(cfg, job_id, DATA / "jobs_out")
+    src_dir = DATA / "jobs_out" / job_id
+    for name in FINAL_NAMES:
+        f = src_dir / name
+        if f.exists():
+            DIRS["inbox"].mkdir(parents=True, exist_ok=True)
+            shutil.copy2(f, DIRS["inbox"] / f"{job_id}{f.suffix}")
+            return name, got
+    return None, got
+
+
+def poll_once():
+    cfg = load_config()
+    with LOCK:
+        js = load_jobs()
+    changed = False
+    for jid, j in js.items():
+        if j.get("pulled") or j.get("state") == "failed":
+            continue
+        try:
+            st = jobs.get_status(cfg, jid)
+        except RuntimeError:
+            continue
+        j["state"] = st.get("state", j["state"])
+        j["stage"] = st.get("stage", "")
+        j["note"] = str(st.get("note", ""))[:200]
+        changed = True
+        if j["state"] == "done":
+            try:
+                name, _ = pull_finished(cfg, jid)
+                j["pulled"] = True
+                j["note"] = f"Đã tải về: {name}" if name else "Xong nhưng không thấy tệp kết quả."
+            except RuntimeError as e:
+                j["note"] = str(e)[:200]
+    if changed:
+        with LOCK:
+            cur = load_jobs()
+            cur.update(js)
+            save_jobs(cur)
+
+
+def poll_loop():
+    while True:
+        try:
+            poll_once()
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(max(10, int(load_config().get("poll_seconds", 30))))
 
 
 def list_dir(d, exts=None):
@@ -165,6 +263,7 @@ class Handler(BaseHTTPRequestHandler):
                 "scripts": list_dir(DIRS["scripts"], {".txt"}),
                 "inbox": list_dir(DIRS["inbox"], MEDIA_EXT),
                 "published": list_dir(DIRS["published"], MEDIA_EXT),
+                "jobs": [dict(v, id=k) for k, v in sorted(load_jobs().items(), reverse=True)],
                 "notebooks": [{"file": k, "title": v} for k, v in NOTEBOOKS.items()],
             })
         if path == "/api/script":
@@ -197,13 +296,19 @@ class Handler(BaseHTTPRequestHandler):
     def route(self, path, body):
         cfg = load_config()
         if path == "/api/config":
-            for k in ("base_url", "model", "rclone_remote"):
-                if isinstance(body.get(k), str) and body[k].strip():
-                    cfg[k] = body[k].strip()
+            for k in ("base_url", "model", "rclone_remote", "drive_dir", "lang"):
+                if isinstance(body.get(k), str):
+                    v = body[k].strip()
+                    if v or k == "drive_dir":
+                        cfg[k] = v
             if isinstance(body.get("password"), str) and body["password"].strip():
                 cfg["password"] = body["password"].strip()
+            if isinstance(body.get("use_claude_code"), bool):
+                cfg["use_claude_code"] = body["use_claude_code"]
             if not re.match(r"^http://(127\.0\.0\.1|localhost)(:\d+)?$", cfg["base_url"].rstrip("/")):
                 raise RuntimeError("Địa chỉ proxy phải là http://127.0.0.1:<cổng> hoặc http://localhost:<cổng>.")
+            if cfg["drive_dir"] and not Path(cfg["drive_dir"]).is_dir():
+                raise RuntimeError("Thư mục Drive đồng bộ không tồn tại.")
             save_config(cfg)
             return {"ok": True}
         if path == "/api/health":
@@ -220,10 +325,22 @@ class Handler(BaseHTTPRequestHandler):
             if not topic:
                 raise RuntimeError("Chưa nhập chủ đề.")
             text = generate_script(cfg, topic, str(body.get("notes", "")).strip())
-            DIRS["scripts"].mkdir(parents=True, exist_ok=True)
-            p = DIRS["scripts"] / f"{slugify(topic)}-{datetime.now():%Y%m%d-%H%M%S}.txt"
-            p.write_text(text + "\n", encoding="utf-8")
+            p = save_script(topic, text)
             return {"name": p.name, "text": text}
+        if path == "/api/auto":
+            topic = str(body.get("topic", "")).strip()
+            if not topic:
+                raise RuntimeError("Chưa nhập chủ đề.")
+            text = generate_script(cfg, topic, str(body.get("notes", "")).strip())
+            p = save_script(topic, text)
+            job_id, where = submit_job(cfg, p.name)
+            return {"name": p.name, "text": text, "job": job_id, "where": where}
+        if path == "/api/job":
+            job_id, where = submit_job(cfg, str(body.get("script", "")), body.get("stages"))
+            return {"job": job_id, "where": where}
+        if path == "/api/poll":
+            poll_once()
+            return {"ok": True}
         if path == "/api/open":
             d = DIRS.get(body.get("folder"))
             if not d:
@@ -250,6 +367,7 @@ def main():
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{port}/"
     print(f"Content Factory chạy tại {url} (đóng cửa sổ này để thoát)")
+    threading.Thread(target=poll_loop, daemon=True).start()
     threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:
         srv.serve_forever()
